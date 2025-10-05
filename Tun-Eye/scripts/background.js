@@ -24,8 +24,8 @@ function genericOnClick(info) {
 
     chrome.windows.getAll().then(res => {
         const screenWidth = res.at(-1).width;
-        const popupHeight = 523;
-        const popupWidth = 438;
+        const popupHeight = 640;
+        const popupWidth = 620;
         console.log(screenWidth)
         chrome.windows.create({
             url: chrome.runtime.getURL('../popup/popup.html'),
@@ -45,7 +45,7 @@ chrome.runtime.onInstalled.addListener(function () {
     ];
     for (let i = 0; i < contexts.length; i++) {
         let context = contexts[i];
-        let title = "Tun-Eye " + context + " mode";
+        let title = "ipa-Tun-Eye: " + context + " mode";
         chrome.contextMenus.create({
             title: title,
             contexts: [context],

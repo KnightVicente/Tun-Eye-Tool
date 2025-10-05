@@ -1,65 +1,30 @@
-const content = document.querySelector('.content');
-const body = document.querySelector('body');
-const mainInterface = document.querySelector('#main-interface');
-const settingsInterface = document.querySelector('#settings-interface');
-const breakdownInterface = document.querySelector('#breakdown-interface');
-const submitBtn = document.querySelector('#submit');
+// ------------------------------
+// Cross-browser compatibility
+// ------------------------------
+const storage = chrome.storage || browser.storage;
 
-// Resize window
-const newHeight = window.outerHeight - window.innerHeight + 523;
-const newWidth = window.outerWidth;
-window.resizeTo(newWidth, newHeight);
+// ------------------------------
+// Utility
+// ------------------------------
+const $ = (sel) => document.querySelector(sel);
 
-// Load preview to user
-chrome.storage.local.get(null).then(res => {
-    switch (res.type) {
-        case 'text':
-            content.textContent = res.value;
-            break;
-        case 'image':
-            content.innerHTML = `
-                <img src="${res.value}" style="object-fit:contain; width:100%; height: 100%; display:block;" />
-            `;
-            break;
-        default:
-            content.textContent = 'Error: Invalid type';
-            break;
-    }
+// ------------------------------
+// Debug Logging Helper
+// ------------------------------
+function log(...args) {
+  console.log("[popup.js]", ...args);
+}
 
-    // Set default behavior for extension
-    if (!('enableExtension' in res)) {
-        chrome.storage.local.set({
-            ...res,
-            'enableExtension': true
-        })
-    }
+// ------------------------------
+// UI State
+// ------------------------------
+let currentStage = "select";
 
-    // To respect user privacy and choice, set enableRecord to false
-    if (!('enableRecord' in res)) {
-        chrome.storage.local.set({
-            ...res,
-            'enableExtension': false
-        })
-    }
-
-    // Disable submission if enableExtension is set to false
-    if ('enableExtension' in res && res.enableExtension === false) {
-        submitBtn.classList.add('submit-disabled', 'disabled');
-        submitBtn.disabled = true;
-    }
-
-    // Listen to chrome storage changes to modify submitBtn
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-        for (let [key, { oldValue, newValue }] of Object.entries(changes)) {
-            if (namespace === "local" && key == 'enableExtension' && newValue === true) {
-                submitBtn.classList.remove('submit-disabled', 'disabled');
-                submitBtn.disabled = false;
-            } else if (namespace === "local" && key == 'enableExtension' && newValue === false) {
-                submitBtn.classList.add('submit-disabled', 'disabled');
-                submitBtn.disabled = true;
-            }
-        }
-    })
+// ------------------------------
+// Panel Switching
+// ------------------------------
+function showPanel(panelId) {
+  log("showPanel ->", panelId);
 
     // Submit data on click
     submitBtn.addEventListener('click', async (e) => {
@@ -67,9 +32,13 @@ chrome.storage.local.get(null).then(res => {
         const answerBtn = document.querySelector('.answer');
         const circleSym = document.querySelector('.symbol');
 
-        e.currentTarget.classList.add("hidden");
-        scanStep.classList.remove("hidden");
-        answerBtn.classList.add('hidden');
+  const panel = document.getElementById(panelId);
+  if (panel) {
+    panel.classList.remove("hidden");
+  } else {
+    log("Panel not found:", panelId);
+  }
+}
 
         const res = await chrome.storage.local.get(null);
         
@@ -167,71 +136,317 @@ function callChartJs(words, values) {
 
     const data = {
         labels: words,
-        datasets: [{
-            label: 'Confidence Score',
-            data: values,  // Negative left, Positive right
-            backgroundColor: values.map(val => val < 0 ? '#F7BF2D' : '#035EE6'),  // Red for Fake, Blue for Real
-        }]
-    };
-
-    const options = {
-        indexAxis: 'y', // Horizontal bars
+        datasets: [
+          {
+            label: "Confidence Score",
+            data: values,
+            backgroundColor: values.map((val) => (val < 0 ? "#F7BF2D" : "#035EE6")),
+          },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        indexAxis: "y",
         scales: {
-            x: {
-                min: -1,  // Force axis to center at 0
-                max: 1,
-                grid: {
-                    color: (context) => context.tick.value === 0 ? 'white' : 'transparent',
-                    lineWidth: (context) => context.tick.value === 0 ? 2 : 0,
-                    drawTicks: true
-
-                },
-                ticks: {
-                    callback: function (value) {
-                        return (value > 0 ? '+' : '') + value;
-                    },
-                    color: "white"
-                }
+          x: {
+            min: -1,
+            max: 1,
+            grid: {
+              color: (context) => (context.tick.value === 0 ? "#2D2D51" : "transparent"),
+              lineWidth: (context) => (context.tick.value === 0 ? 2 : 0),
             },
-            y: {
-                grid: {
-                    drawBorder: false,
-                },
-                ticks: {
-                    color: 'white'
-                }
-            }
+            ticks: {
+              callback: function (value) {
+                return (value > 0 ? "+" : "") + value;
+              },
+              color: "#2D2D51",
+              font: {
+                size: 11,
+              },
+            },
+          },
+          y: {
+            grid: {
+              drawBorder: false,
+            },
+            ticks: {
+              color: "#2D2D51",
+              font: {
+                size: 11,
+              },
+            },
+          },
         },
         plugins: {
-            legend: {
-                display: false
+          legend: {
+            display: false,
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                return `${ctx.dataset.label}: ${ctx.raw}`;
+              },
             },
-            tooltip: {
-                callbacks: {
-                    label: ctx => {
-                        return `${ctx.dataset.label}: ${ctx.raw}`;
-                    }
-                }
+          },
+          title: {
+            display: true,
+            text: "Fake                           Neutral                           Real",
+            font: {
+              size: 12,
             },
-            title: {
-                display: true,
-                text: 'Fake                  Neutral                  Real',
-                font: {
-                    size: 14
-                },
-                padding: {
-                    top: 10,
-                    bottom: 20
-                },
-                color: "white"
-            }
-
-        }
-    };
-
-    new Chart(ctx, {
-        type: 'bar',
-        data: data,
-        options: options,
+            padding: {
+              top: 5,
+              bottom: 5,
+            },
+            color: "#2D2D51",
+          },
+        },
+      },
     });
+  }, 100);
 }
+
+// TEMPORARY TEST - Call testChart() in console to test
+function testChart() {
+  const mockOutput = {
+    verdict: "Fake News",
+    words: [
+      { word: "hoax", weight: -0.8 },
+      { word: "fake", weight: -0.6 },
+      { word: "truth", weight: 0.7 },
+      { word: "verified", weight: 0.9 },
+    ],
+  };
+  
+  setStage("result");
+  callChartJs(
+    mockOutput.words.map((item) => item.word),
+    mockOutput.words.map((item) => item.weight),
+    mockOutput.verdict
+  );
+}
+
+// ------------------------------
+// Event Listeners
+// ------------------------------
+document.addEventListener("DOMContentLoaded", () => {
+  log("DOMContentLoaded fired.");
+
+  // Load Content from Storage
+    storage.local.get(null, (res) => {
+      log("Storage loaded:", res);
+
+      const mainContent = $(".popup-main");
+      const submitBtn = $("#submit");
+
+      // Set default values if not present
+      if (!("enableExtension" in res)) {
+        storage.local.set({ enableExtension: true });
+        res.enableExtension = true;
+      }
+
+      if (!("enableRecord" in res)) {
+        storage.local.set({ enableRecord: false });
+        res.enableRecord = false;
+      }
+
+    // Display content if it exists
+    if (res.type && res.value) {
+      switch (res.type) {
+        case "text":
+          mainContent.innerHTML = `<p style="color: #2D2D51; padding: 10px;">${res.value}</p>`;
+          setStage("preview");
+          break;
+        case "image":
+          mainContent.innerHTML = `<img src="${res.value}" style="object-fit:contain; width:100%; height:100%; display:block;" />`;
+          setStage("preview");
+          break;
+        default:
+          log("Unknown content type:", res.type);
+          setStage("select");
+          break;
+      }
+    } else {
+      log("No content in storage");
+      setStage("select");
+    }
+
+    // Apply enableExtension state to button
+    if (res.enableExtension === false && submitBtn) {
+      log("Extension disabled - disabling submit button");
+      submitBtn.disabled = true;
+      submitBtn.classList.remove("stage-select", "stage-preview", "stage-analyzing", "stage-result");
+      submitBtn.classList.add("extension-disabled");
+      submitBtn.textContent = "Extension Disabled";
+    }
+
+  });
+
+  //Storage change listener
+  storage.onChanged.addListener((changes, namespace) => {
+    log("Storage changed:", changes, namespace);
+
+    if (namespace === "local" && changes.enableExtension) {
+      const submitBtn = $("#submit");
+      const newValue = changes.enableExtension.newValue;
+
+      log("enableExtension changed to:", newValue);
+
+      if (submitBtn) {
+        if (newValue === true) {
+          submitBtn.disabled = false;
+          submitBtn.classList.remove("extension-disabled");
+          log("Submit button enabled");
+          // Restore proper stage styling
+          updateUIForStage(currentStage);
+        } else {
+          submitBtn.disabled = true;
+          submitBtn.classList.remove("stage-select", "stage-preview", "stage-analyzing", "stage-result");
+          submitBtn.classList.add("extension-disabled");
+          submitBtn.textContent = "Extension Disabled";
+          log("Submit button disabled");
+        }
+      }
+    }
+  });
+
+  // Dashboard button
+  const dashBtn = $(".dashboard");
+  if (dashBtn) {
+    dashBtn.addEventListener("click", () => {
+      log("Dashboard clicked");
+      chrome.tabs.create({ url: chrome.runtime.getURL("page/page.html") });
+    });
+  }
+
+  // Settings button
+  const settingsBtn = $(".icon-btn.settings");
+  const settingsPanel = document.getElementById("settings-panel");
+  const mainInterface = document.getElementById("main-interface");
+  const helpPanel = document.getElementById("help-panel");
+
+  if (settingsBtn && settingsPanel && mainInterface) {
+    settingsBtn.addEventListener("click", () => {
+      const isSettingsHidden = settingsPanel.classList.contains("hidden");
+
+      if (isSettingsHidden) {
+        log("Opening settings panel");
+        // Hide all other panels
+        mainInterface.classList.add("hidden");
+        helpPanel.classList.add("hidden");
+        // Show settings
+        settingsPanel.classList.remove("hidden");
+      } else {
+        log("Closing settings panel");
+        // Close settings, show main
+        settingsPanel.classList.add("hidden");
+        mainInterface.classList.remove("hidden");
+      }
+    });
+  }
+
+  // Help button
+  const helpBtn = $(".icon-btn.help");
+  if (helpBtn && helpPanel && mainInterface) {
+    helpBtn.addEventListener("click", () => {
+      const isHelpHidden = helpPanel.classList.contains("hidden");
+
+      if (isHelpHidden) {
+        log("Opening help panel");
+        // Hide all other panels
+        mainInterface.classList.add("hidden");
+        settingsPanel.classList.add("hidden");
+        // Show help
+        helpPanel.classList.remove("hidden");
+      } else {
+        log("Closing help panel");
+        // Close help, show main
+        helpPanel.classList.add("hidden");
+        mainInterface.classList.remove("hidden");
+      }
+    });
+  }
+
+
+  // Detection button
+  const submitBtn = $("#submit");
+  if (submitBtn) {
+    submitBtn.addEventListener("click", async () => {
+      log("Submit clicked. Current stage:", currentStage);
+
+      if (currentStage === "preview") {
+        // Start detection
+        setStage("analyzing");
+
+        try {
+          // Get all storage data for API call
+          const storageData = await new Promise((resolve) => {
+            storage.local.get(null, resolve);
+          });
+
+          log("Sending to API:", storageData);
+
+          // Call Flask API
+          const response = await fetch("http://127.0.0.1:1234/api/process", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Log": storageData.enableRecord || false,
+            },
+            body: JSON.stringify(storageData),
+          });
+
+          if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+          }
+
+          const output = await response.json();
+          log("API response:", output);
+
+          // Transition to result stage
+          setStage("result");
+
+          // Display verdict and chart
+          callChartJs(
+            output.words.map((item) => item.word),
+            output.words.map((item) => item.weight),
+            output.verdict
+          );
+
+        } catch (err) {
+          log("Error during detection:", err);
+          console.error("Error encountered:\n------------------------------\n", err);
+          
+          // Return to preview stage on error
+          setStage("preview");
+          
+          // Show error to user
+          const mainContent = $(".popup-main");
+          if (mainContent) {
+            mainContent.innerHTML = `<p style="color: red; padding: 10px;">Error: Could not connect to detection service. Make sure the backend is running.</p>`;
+          }
+        }
+
+      } else if (currentStage === "result") {
+        // Return to select stage
+        log("Returning to select stage");
+        
+        // Clear stored content
+        storage.local.remove(["type", "value"], () => {
+          log("Cleared content from storage");
+        });
+        
+        // Reset to select stage
+        setStage("select");
+        
+        // Clear the content display
+        const mainContent = $(".popup-main");
+        if (mainContent) {
+          mainContent.innerHTML = `<p><i>Your selected content will appear here.<br><br>Right click on highlighted text or hovered image to load it here.</i></p>`;
+        }
+      }
+    });
+  }
+
+});
+
